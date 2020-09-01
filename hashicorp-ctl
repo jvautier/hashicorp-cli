@@ -1,0 +1,204 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import requests
+import json
+import yaml
+import argparse
+import inspect
+import sys
+import os
+import platform
+import shutil
+import hashlib
+import zipfile
+import re
+import tempfile
+
+from distutils.version import LooseVersion
+
+
+class HashiCtl():
+    # def __init__(self):
+
+    def _get_releases(self, name, **kwargs):
+        return requests.get('https://releases.hashicorp.com/index.json').json().get(name)
+
+    def get_url(self, name, version, os, arch, **kwargs):
+        # platform.platform()
+        # linux amd64 ~/bin/linux
+        if not version:
+            version = self.get_latest_version(name, **kwargs)
+        if not os:
+            os = platform.system().lower()
+        if not arch:
+            arch = platform.machine().lower()
+            if platform.machine() == 'x86_64':
+                arch = "amd64"
+        # arch = "toto"
+        # print(name, version, os, arch)
+
+        # print(platform.linux_distribution()[0])
+        # print(platform.linux_distribution()[1])
+        # print(platform.linux_distribution()[2])
+        url = "https://releases.hashicorp.com/{0}/{1}/{0}_{1}_{2}_{3}.zip".format(
+            name, version, os, arch)
+        return url
+
+    def get_sha_file_content(self, name, version, os, arch, **kwargs):
+        if not version:
+            version = self.get_latest_version(name)
+        if not os:
+            os = platform.system().lower()
+        if not arch:
+            if platform.machine() == 'x86_64':
+                arch = "amd64"
+        url = "https://releases.hashicorp.com/{0}/{1}/{0}_{1}_SHA256SUMS".format(
+            name, version, os, arch)
+
+        return requests.get(url).text
+
+    def get_versions_list(self, name, **kwargs):
+        releases = self._get_releases(name)
+        version_list = list(releases.get('versions'))
+        version_list = list(filter(None, version_list))
+        if not kwargs.get('alpha'):
+            version_list = [
+                k for k in version_list if 'alpha' not in k
+            ]
+
+        if not kwargs.get('beta'):
+            version_list = [
+                k for k in version_list if 'beta' not in k
+            ]
+        version_list.sort(key=LooseVersion)
+        return version_list
+
+    def get_latest_version(self, name, **kwargs):
+        return self.get_versions_list(name, **kwargs)[-1]
+
+    def download(self, name, version, os, arch, dest='', **kwargs):
+        if not dest or dest == '':
+            dest = tempfile.mkdtemp()
+        url = self.get_url(name, version, os, arch)
+        sha256sums_content = self.get_sha_file_content(name, version, os, arch)
+        # nomad exception to clean
+        sha256sums_content = re.sub("\./", "", sha256sums_content)
+
+        with open("{0}/{1}_SHA256SUMS".format(dest, name), 'w') as outfile:
+            outfile.write(sha256sums_content)
+
+        rh = requests.head(url)
+        rh.raise_for_status()
+
+        archive_filename = url.split('/')[-1]
+        archive_filepath = "{0}/{1}".format(dest, archive_filename)
+        r = requests.get(url, stream=True)
+        with open(archive_filepath, 'wb') as f:
+            shutil.copyfileobj(r.raw, f)
+
+        from py_essentials import hashing as hs
+        hash = hs.fileChecksum(archive_filepath, "sha256")
+        # beware two spaces
+        check_str = "{0}  {1}".format(hash, archive_filename)
+        print('sha256 test', check_str)
+        if sha256sums_content.find(check_str) == -1:
+            print("sha256sums mismatch")
+            exit(1)
+
+        return archive_filepath
+
+    def install(self, name, version, os_name, arch, dest='', **kwargs):
+        # os_arg = os
+        # import os
+        if not version:
+            version = self.get_latest_version(name)
+        archive_filepath = self.download(
+            name, version, os_name, arch, **kwargs)
+
+        with zipfile.ZipFile(archive_filepath, "r") as zip_ref:
+            zip_ref.extractall(dest)
+
+        result = "{0}/{1}".format(dest, name)
+
+        if kwargs.get('versionkeep'):
+            result = "{0}/{1}-{2}".format(dest, name, version)
+            os.rename("{0}/{1}".format(dest, name), result)
+
+        return result
+
+    def parse(self):
+        parser = argparse.ArgumentParser(description='kv-ctl')
+        actions = parser.add_subparsers(
+            title="action",
+            description="action desc",
+            prog="prog",
+            dest="action",
+            help="action help"
+        )
+        parser.add_argument('--alpha', dest="alpha",
+                            required=False, action='store_true')
+        parser.add_argument('--beta', dest="beta",
+                            required=False, action='store_true')
+        parser.set_defaults(beta=False)
+        parser.set_defaults(alpha=False)
+
+        latest_action = actions.add_parser("latest")
+        latest_action.add_argument('-n', '--name', required=True)
+        latest_action.set_defaults(func=self.get_latest_version)
+
+        url_action = actions.add_parser("url")
+        url_action.add_argument('-n', '--name', required=True)
+        url_action.add_argument('-v', '--version')
+        url_action.add_argument('--os')
+        url_action.add_argument('--arch')
+        url_action.set_defaults(func=self.get_url)
+
+        versions_action = actions.add_parser("versions")
+        versions_action.add_argument('-n', '--name', required=True)
+        versions_action.set_defaults(func=self.get_versions_list)
+
+        download_action = actions.add_parser("download")
+        download_action.add_argument('-n', '--name', required=True)
+        download_action.add_argument('-v', '--version')
+        download_action.add_argument('--os')
+        download_action.add_argument('--arch')
+        download_action.add_argument('--dest')
+        download_action.set_defaults(func=self.download)
+
+        install_action = actions.add_parser("install")
+        install_action.add_argument('-n', '--name', required=True)
+        install_action.add_argument('-v', '--version')
+        install_action.add_argument('--os_name')
+        install_action.add_argument('--arch')
+        install_action.add_argument('--dest')
+        install_action.add_argument('--versionkeep', dest="versionkeep",
+                                    required=False, action='store_true')
+        install_action.set_defaults(func=self.install)
+
+        args = parser.parse_args(sys.argv[1:])
+
+        if args.action == None:
+            parser.print_help()
+            exit(1)
+
+        argspec = inspect.getfullargspec(args.func)
+        if argspec.varkw or argspec.defaults or argspec.kwonlyargs or argspec.kwonlydefaults:
+            # convert args to a dictionary
+            args_for_func = vars(args)
+        else:
+            # get a subset of the dictionary containing just the arguments of func
+            args_for_func = {k: getattr(args, k) for k in argspec.args}
+
+        result = args.func(**args_for_func)
+        if result != None:
+            print(result)
+
+
+def main():
+    ctl = HashiCtl()
+    ctl.parse()
+
+
+if __name__ == '__main__':
+    main()
