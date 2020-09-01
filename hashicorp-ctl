@@ -128,7 +128,7 @@ class HashiCtl():
         return result
 
     def parse(self):
-        parser = argparse.ArgumentParser(description='kv-ctl')
+        parser = argparse.ArgumentParser(description='hashicorp-cli')
         actions = parser.add_subparsers(
             title="action",
             description="action desc",
