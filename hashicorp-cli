@@ -18,7 +18,7 @@ import tempfile
 from distutils.version import LooseVersion
 
 
-class HashiCtl():
+class HashicorpCli():
     # def __init__(self):
 
     def _get_releases(self, name, **kwargs):
@@ -196,7 +196,7 @@ class HashiCtl():
 
 
 def main():
-    ctl = HashiCtl()
+    ctl = HashicorpCli()
     ctl.parse()
 
 
