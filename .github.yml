@@ -1,0 +1,15 @@
+---
+fullname: jvautier/hashicorp-cli
+description: hashicorp tiny api client (parsing https://releases.hashicorp.com/index.json)
+tags:
+  - python
+  - cli
+  - hashicorp
+  - api
+  - consul
+  - nomad
+  - packer
+  - terraform
+  - vagrant
+  - vault
+github: {}
