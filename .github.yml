@@ -1,4 +1,5 @@
 ---
+# See https://github.com/jvautier/project-cli
 fullname: jvautier/hashicorp-cli
 description: hashicorp tiny api client (parsing https://releases.hashicorp.com/index.json)
 tags:
