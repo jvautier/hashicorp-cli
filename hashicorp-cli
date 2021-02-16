@@ -8,6 +8,7 @@ import argparse
 import inspect
 import sys
 import os
+import stat
 import platform
 import shutil
 import hashlib
@@ -35,12 +36,7 @@ class HashicorpCli():
             arch = platform.machine().lower()
             if platform.machine() == 'x86_64':
                 arch = "amd64"
-        # arch = "toto"
-        # print(name, version, os, arch)
 
-        # print(platform.linux_distribution()[0])
-        # print(platform.linux_distribution()[1])
-        # print(platform.linux_distribution()[2])
         url = "https://releases.hashicorp.com/{0}/{1}/{0}_{1}_{2}_{3}.zip".format(
             name, version, os, arch)
         return url
@@ -109,23 +105,31 @@ class HashicorpCli():
         return archive_filepath
 
     def install(self, name, version, os_name, arch, dest='', **kwargs):
-        # os_arg = os
-        # import os
+
         if not version:
             version = self.get_latest_version(name)
         archive_filepath = self.download(
             name, version, os_name, arch, **kwargs)
 
+        if kwargs.get('keep_version'):
+            result = f"{dest}/{name}-v{version}"
+        else:
+            result = f"{dest}/{name}"
+
+        # print(f"{name} {version} {os_name} {arch} {dest} {result}")
+
         with zipfile.ZipFile(archive_filepath, "r") as zip_ref:
-            zip_ref.extractall(dest)
+            zip_ref.extractall("./tmp")
 
-        result = "{0}/{1}".format(dest, name)
-
-        if kwargs.get('versionkeep'):
-            result = "{0}/{1}-{2}".format(dest, name, version)
-            os.rename("{0}/{1}".format(dest, name), result)
+        os.chmod(f"./tmp/{name}", 0o775)
+        os.rename(f"./tmp/{name}", result)
 
         return result
+        # result = "{0}/{1}".format(dest, name)
+
+        # if kwargs.get('keep_version'):
+
+        # return result
 
     def parse(self):
         parser = argparse.ArgumentParser(description='hashicorp-cli')
@@ -169,10 +173,10 @@ class HashicorpCli():
         install_action = actions.add_parser("install")
         install_action.add_argument('-n', '--name', required=True)
         install_action.add_argument('-v', '--version')
-        install_action.add_argument('--os_name')
+        install_action.add_argument('--os-name')
         install_action.add_argument('--arch')
         install_action.add_argument('--dest')
-        install_action.add_argument('--versionkeep', dest="versionkeep",
+        install_action.add_argument('--keep-version', dest="keep_version",
                                     required=False, action='store_true')
         install_action.set_defaults(func=self.install)
 
